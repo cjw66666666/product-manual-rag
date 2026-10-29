@@ -28,6 +28,34 @@ docker compose up -d --build
 
 填写 `.env` 中的模型 API Key、管理员密码哈希和 Session Secret。
 
+### 安装依赖
+
+完整的 Python、Node 和系统依赖都可以从仓库中的锁定文件与 Docker 配置还原：
+
+| 文件 | 作用 |
+|---|---|
+| `pyproject.toml` | 声明 Python 版本、运行依赖和开发依赖 |
+| `uv.lock` | 锁定完整 Python 依赖树 |
+| `requirements.txt` | Docker 后端镜像使用的运行依赖导出 |
+| `apps/web/package.json` | 前端运行和开发依赖 |
+| `apps/web/package-lock.json` | 锁定完整 Node 依赖树 |
+| `Dockerfile` | Python 3.12 与 Tesseract OCR 系统环境 |
+| `apps/web/Dockerfile` | Node 20 前端构建和运行环境 |
+| `compose.yaml` | MySQL 8.4、Qdrant 及应用服务拓扑 |
+
+推荐直接使用 Docker，它会自动安装 Python、Node、MySQL 客户端依赖所需的
+运行环境，以及带 `chi_sim+eng` 语言包的 Tesseract OCR。
+
+宿主机开发还需要：
+
+- Python `3.12`
+- `uv`
+- Node.js `20` 与 npm（仅前端开发需要）
+- Docker Engine 与 Docker Compose
+
+如果只为宿主机 Python 脚本配置 OCR，还需要自行安装
+`tesseract-ocr`、`tesseract-ocr-chi-sim` 和 `tesseract-ocr-eng`。
+
 ### 配置 `.env`
 
 必须配置：
@@ -132,6 +160,34 @@ docker compose up -d --build
 
 Set the model API keys, Argon2 admin password hash, and session secret in
 `.env`.
+
+### Dependencies
+
+All Python, Node, and system dependencies can be reproduced from:
+
+| File | Purpose |
+|---|---|
+| `pyproject.toml` | Python version and runtime/development dependencies |
+| `uv.lock` | Exact Python dependency lock |
+| `requirements.txt` | Runtime export used by the backend Docker image |
+| `apps/web/package.json` | Frontend runtime and development dependencies |
+| `apps/web/package-lock.json` | Exact Node dependency lock |
+| `Dockerfile` | Python 3.12 and Tesseract OCR environment |
+| `apps/web/Dockerfile` | Node 20 frontend build/runtime environment |
+| `compose.yaml` | MySQL 8.4, Qdrant, and application services |
+
+Docker is the recommended setup because it installs the Python and Node
+runtimes plus Tesseract OCR with the `chi_sim+eng` language packs.
+
+Host-side development requires:
+
+- Python `3.12`
+- `uv`
+- Node.js `20` and npm for frontend development
+- Docker Engine and Docker Compose
+
+For host-side OCR, install `tesseract-ocr`, `tesseract-ocr-chi-sim`, and
+`tesseract-ocr-eng` separately.
 
 ### Configure `.env`
 
