@@ -28,6 +28,51 @@ docker compose up -d --build
 
 填写 `.env` 中的模型 API Key、管理员密码哈希和 Session Secret。
 
+### 配置 `.env`
+
+必须配置：
+
+| 变量 | 用途 |
+|---|---|
+| `RAG_EMBEDDING_API_KEY` | Embedding 模型 API Key |
+| `RAG_RERANKER_API_KEY` | Reranker 模型 API Key |
+| `RAG_LLM_API_KEY` | 回答和验证使用的大模型 API Key |
+| `RAG_ADMIN_PASSWORD_HASH` | 管理端密码的 Argon2 哈希 |
+| `RAG_SESSION_SECRET` | 管理端 Session 签名密钥，至少 32 字符 |
+
+生成管理员密码哈希：
+
+```powershell
+uv run python -c "from argon2 import PasswordHasher; print(PasswordHasher().hash('replace-this-password'))"
+```
+
+生成 Session Secret：
+
+```powershell
+uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+常用可选配置：
+
+| 变量 | 默认值/说明 |
+|---|---|
+| `RAG_LLM_BASE_URL` | `https://api.deepseek.com/v1` |
+| `RAG_LLM_MODEL` | 回答模型名称 |
+| `RAG_VERIFIER_MODEL` | 留空时使用回答模型 |
+| `RAG_EMBEDDING_MODEL` | `BAAI/bge-m3` |
+| `RAG_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` |
+| `RAG_INDEX_VERSION_ID` | 默认 `i4`，需与 seed/API/worker 保持一致 |
+| `RAG_MAX_UPLOAD_BYTES` | 单文件上传上限，默认 50 MiB |
+| `RAG_MAX_BATCH_UPLOAD_BYTES` | 批次上传上限，默认 200 MiB |
+| `RAG_MAX_REQUESTS_PER_MINUTE` | 公共问答限流 |
+| `RAG_LANGFUSE_PUBLIC_KEY` | 可选，Langfuse 公钥 |
+| `RAG_LANGFUSE_SECRET_KEY` | 可选，Langfuse 私钥 |
+| `RAG_LANGFUSE_HOST` | 默认 `https://cloud.langfuse.com` |
+
+Compose 会在容器内自动把 MySQL 和 Qdrant 地址覆盖为服务名
+`mysql:3306` 和 `qdrant:6333`；`.env.example` 中的
+`127.0.0.1:3307`、`localhost:6333` 主要供宿主机脚本使用。
+
 - Web：<http://localhost:3000>
 - 管理端：<http://localhost:3000/admin>
 - 健康检查：<http://localhost:8000/health/ready>
@@ -87,6 +132,51 @@ docker compose up -d --build
 
 Set the model API keys, Argon2 admin password hash, and session secret in
 `.env`.
+
+### Configure `.env`
+
+Required values:
+
+| Variable | Purpose |
+|---|---|
+| `RAG_EMBEDDING_API_KEY` | Embedding provider API key |
+| `RAG_RERANKER_API_KEY` | Reranker provider API key |
+| `RAG_LLM_API_KEY` | LLM key used for generation and verification |
+| `RAG_ADMIN_PASSWORD_HASH` | Argon2 hash for admin login |
+| `RAG_SESSION_SECRET` | Admin session signing secret, at least 32 characters |
+
+Generate the admin password hash:
+
+```powershell
+uv run python -c "from argon2 import PasswordHasher; print(PasswordHasher().hash('replace-this-password'))"
+```
+
+Generate the session secret:
+
+```powershell
+uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Common optional values:
+
+| Variable | Default / meaning |
+|---|---|
+| `RAG_LLM_BASE_URL` | `https://api.deepseek.com/v1` |
+| `RAG_LLM_MODEL` | Generation model name |
+| `RAG_VERIFIER_MODEL` | Uses the answer model when empty |
+| `RAG_EMBEDDING_MODEL` | `BAAI/bge-m3` |
+| `RAG_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` |
+| `RAG_INDEX_VERSION_ID` | Defaults to `i4`; keep seed/API/worker aligned |
+| `RAG_MAX_UPLOAD_BYTES` | Per-file upload limit, default 50 MiB |
+| `RAG_MAX_BATCH_UPLOAD_BYTES` | Batch upload limit, default 200 MiB |
+| `RAG_MAX_REQUESTS_PER_MINUTE` | Public answer rate limit |
+| `RAG_LANGFUSE_PUBLIC_KEY` | Optional Langfuse public key |
+| `RAG_LANGFUSE_SECRET_KEY` | Optional Langfuse secret key |
+| `RAG_LANGFUSE_HOST` | Defaults to `https://cloud.langfuse.com` |
+
+Inside Compose, MySQL and Qdrant addresses are overridden to the service
+hosts `mysql:3306` and `qdrant:6333`. The `127.0.0.1:3307` and
+`localhost:6333` values in `.env.example` are for host-side scripts.
 
 ### Local-Only Data
 
