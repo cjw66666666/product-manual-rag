@@ -1,0 +1,43 @@
+# Local environment
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local worktrees
+.worktrees/
+
+# Runtime data
+logs/
+data/
+output/
+temp_data/
+reports/
+
+# Local-only evaluation corpora and source manuals
+datasets/eval/
+docs/doc1/
+

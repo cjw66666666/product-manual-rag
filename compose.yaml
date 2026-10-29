@@ -1,0 +1,131 @@
+name: product-manual-rag
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: rag
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD
+        - mysqladmin
+        - ping
+        - -h
+        - localhost
+        - -proot
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  migrate:
+    build:
+      context: .
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - .env
+    environment:
+      RAG_DATABASE_URL: mysql+pymysql://root:root@mysql:3306/rag
+      RAG_QDRANT_URL: http://qdrant:6333
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  seed:
+    build:
+      context: .
+    command:
+      - python
+      - -m
+      - rag_app.seed_main
+      - --index-version-id
+      - i4
+    env_file:
+      - .env
+    environment:
+      RAG_DATABASE_URL: mysql+pymysql://root:root@mysql:3306/rag
+      RAG_QDRANT_URL: http://qdrant:6333
+      RAG_INDEX_VERSION_ID: i4
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  api:
+    build:
+      context: .
+    command:
+      - uvicorn
+      - rag_app.api_main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      RAG_DATABASE_URL: mysql+pymysql://root:root@mysql:3306/rag
+      RAG_QDRANT_URL: http://qdrant:6333
+      RAG_FILE_STORAGE_ROOT: /data/files
+      RAG_INDEX_VERSION_ID: i4
+    ports:
+      - "8000:8000"
+    volumes:
+      - file_data:/data/files
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+
+  worker:
+    build:
+      context: .
+    command:
+      - python
+      - -m
+      - rag_app.worker_main
+      - --index-version-id
+      - i4
+    env_file:
+      - .env
+    environment:
+      RAG_DATABASE_URL: mysql+pymysql://root:root@mysql:3306/rag
+      RAG_QDRANT_URL: http://qdrant:6333
+      RAG_FILE_STORAGE_ROOT: /data/files
+      RAG_INDEX_VERSION_ID: i4
+    volumes:
+      - file_data:/data/files
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+
+  web:
+    build:
+      context: ./apps/web
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  mysql_data:
+  qdrant_data:
+  file_data:

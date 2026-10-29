@@ -1,0 +1,1 @@
+"""Product manual RAG application."""
