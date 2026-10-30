@@ -19,6 +19,12 @@
 - 可取消的模型调用与 SSE 阶段状态
 - 可选 Langfuse Trace 和评测指标
 
+### 演示视频
+
+[![产品手册 RAG 演示视频](docs/demo-cover.jpg)](docs/演示视频.mp4)
+
+点击封面查看文档导入、审批发布与问答流程的完整演示。
+
 ### 快速启动
 
 ```powershell
@@ -150,6 +156,13 @@ Key capabilities:
 - Citation resolution, negation protection, and unsafe-answer blocking
 - Cancellable model calls and SSE progress events
 - Optional Langfuse traces and evaluation metrics
+
+### Demo
+
+[![Product Manual RAG demo](docs/demo-cover.jpg)](docs/演示视频.mp4)
+
+Click the cover to watch the complete document import, approval, publication,
+and question-answering workflow.
 
 ### Quick Start
 
