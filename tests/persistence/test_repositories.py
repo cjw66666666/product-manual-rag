@@ -179,12 +179,14 @@ def test_safety_version_requires_approval_before_activation() -> None:
         repo.bind_product("p1", "d1")
 
         assert repo.list_pending_approval_product_ids() == ("p1",)
+        assert repo.list_approved_product_ids() == ()
 
         with pytest.raises(ValueError, match="approval"):
             repo.activate_version("p1", "d1", version_id)
 
         repo.approve_version(version_id, approved_by="reviewer")
         assert repo.list_pending_approval_product_ids() == ()
+        assert repo.list_approved_product_ids() == ("p1",)
         repo.activate_version("p1", "d1", version_id)
 
         assert repo.active_version_ids("p1") == (version_id,)

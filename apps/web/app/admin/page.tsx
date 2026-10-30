@@ -20,6 +20,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type SessionState = "checking" | "anonymous" | "admin";
 
+type ApprovalView = "pending" | "approved";
+
 type ConflictType = "duplicate_content" | "same_name";
 
 type ProductOption = {
@@ -123,6 +125,9 @@ export default function AdminPage() {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [pendingApprovalProductIds, setPendingApprovalProductIds] =
     useState<string[]>([]);
+  const [approvedProductIds, setApprovedProductIds] = useState<string[]>([]);
+  const [approvalView, setApprovalView] =
+    useState<ApprovalView>("pending");
   const [conflictItem, setConflictItem] = useState<ImportItem | null>(null);
   const [conflictVersion, setConflictVersion] = useState("");
   const [productItem, setProductItem] = useState<ImportItem | null>(null);
@@ -148,19 +153,33 @@ export default function AdminPage() {
   useEffect(() => {
     if (session === "admin") {
       void loadProducts();
-      void loadPendingApprovalProducts().catch(() => {
+      void loadApprovalProducts().catch(() => {
         setPendingApprovalProductIds([]);
+        setApprovedProductIds([]);
       });
     }
   }, [session]);
 
-  const approvalProducts = useMemo(
+  const pendingApprovalProducts = useMemo(
     () =>
       products.filter((product) =>
         pendingApprovalProductIds.includes(product.id),
       ),
     [pendingApprovalProductIds, products],
   );
+
+  const approvedProducts = useMemo(
+    () =>
+      products.filter((product) =>
+        approvedProductIds.includes(product.id),
+      ),
+    [approvedProductIds, products],
+  );
+
+  const approvalProducts =
+    approvalView === "pending"
+      ? pendingApprovalProducts
+      : approvedProducts;
 
   useEffect(() => {
     if (approvalProducts.length === 0) {
@@ -340,8 +359,11 @@ export default function AdminPage() {
       );
       if (!response.ok) throw new Error(await responseError(response));
       setMessage("版本已审批通过");
-      const pendingIds = await loadPendingApprovalProducts();
-      if (pendingIds.includes(versionProductId)) {
+      const groups = await loadApprovalProducts();
+      if (groups.pending.includes(versionProductId)) {
+        await loadVersions(versionProductId);
+      } else if (groups.approved.includes(versionProductId)) {
+        setApprovalView("approved");
         await loadVersions(versionProductId);
       }
     } catch (approvalError) {
@@ -600,15 +622,32 @@ export default function AdminPage() {
     }
   }
 
-  async function loadPendingApprovalProducts(): Promise<string[]> {
-    const response = await fetch(
-      "/api/admin/products/pending-approval",
-      { credentials: "include" },
-    );
-    if (!response.ok) throw new Error(await responseError(response));
-    const productIds = (await response.json()) as string[];
-    setPendingApprovalProductIds(productIds);
-    return productIds;
+  async function loadApprovalProducts(): Promise<{
+    pending: string[];
+    approved: string[];
+  }> {
+    const [pendingResponse, approvedResponse] = await Promise.all([
+      fetch("/api/admin/products/pending-approval", {
+        credentials: "include",
+      }),
+      fetch("/api/admin/products/approved", {
+        credentials: "include",
+      }),
+    ]);
+    if (!pendingResponse.ok) {
+      throw new Error(await responseError(pendingResponse));
+    }
+    if (!approvedResponse.ok) {
+      throw new Error(await responseError(approvedResponse));
+    }
+    const pending = (await pendingResponse.json()) as string[];
+    const approved = (await approvedResponse.json()) as string[];
+    setPendingApprovalProductIds(pending);
+    setApprovedProductIds(approved);
+    if (pending.length === 0 && approved.length > 0) {
+      setApprovalView("approved");
+    }
+    return { pending, approved };
   }
 
   async function queueWithProductName(
@@ -760,11 +799,18 @@ export default function AdminPage() {
                         <code>{version.id.slice(0, 12)}</code>
                       </td>
                       <td>
-                        <span
-                          className={`admin-tag version-${version.status}`}
-                        >
-                          {version.status}
-                        </span>
+                        <div className="admin-index-list">
+                          <span
+                            className={`admin-tag version-${version.status}`}
+                          >
+                            {version.status}
+                          </span>
+                          {!pending && version.status !== "active" && (
+                            <span className="admin-tag status-unpublished">
+                              未发布
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td>
                         {pending
@@ -1189,7 +1235,11 @@ export default function AdminPage() {
                 }}
               >
                 {approvalProducts.length === 0 ? (
-                  <option value="">暂无待审批产品</option>
+                  <option value="">
+                    {approvalView === "pending"
+                      ? "暂无待审批产品"
+                      : "暂无已审批产品"}
+                  </option>
                 ) : (
                   approvalProducts.map((product) => (
                     <option key={product.id} value={product.id}>
@@ -1202,9 +1252,13 @@ export default function AdminPage() {
                 className="admin-secondary-button"
                 type="button"
                 onClick={() => {
-                  void loadPendingApprovalProducts()
-                    .then((pendingIds) => {
-                      if (pendingIds.includes(versionProductId)) {
+                  void loadApprovalProducts()
+                    .then((groups) => {
+                      const productIds =
+                        approvalView === "pending"
+                          ? groups.pending
+                          : groups.approved;
+                      if (productIds.includes(versionProductId)) {
                         return loadVersions(versionProductId);
                       }
                     })
@@ -1223,8 +1277,51 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {renderVersionGroup("pending", pendingVersions)}
-          {renderVersionGroup("approved", approvedVersions)}
+          <div
+            className="admin-version-tabs"
+            role="tablist"
+            aria-label="审批状态"
+          >
+            <button
+              className={`admin-version-tab ${
+                approvalView === "pending" ? "active" : ""
+              }`}
+              type="button"
+              role="tab"
+              aria-selected={approvalView === "pending"}
+              onClick={() => {
+                setApprovalView("pending");
+                setVersionProductId("");
+                setVersions([]);
+              }}
+            >
+              待审批
+              <span>{pendingApprovalProducts.length}</span>
+            </button>
+            <button
+              className={`admin-version-tab ${
+                approvalView === "approved" ? "active" : ""
+              }`}
+              type="button"
+              role="tab"
+              aria-selected={approvalView === "approved"}
+              onClick={() => {
+                setApprovalView("approved");
+                setVersionProductId("");
+                setVersions([]);
+              }}
+            >
+              已审批 / 发布
+              <span>{approvedProducts.length}</span>
+            </button>
+          </div>
+
+          {renderVersionGroup(
+            approvalView,
+            approvalView === "pending"
+              ? pendingVersions
+              : approvedVersions,
+          )}
         </section>
       </div>
 

@@ -13,6 +13,8 @@ class PublicationService(Protocol):
 
     def list_pending_approval_product_ids(self) -> tuple[str, ...]: ...
 
+    def list_approved_product_ids(self) -> tuple[str, ...]: ...
+
     def approve(self, version_id: str, *, approved_by: str) -> None: ...
 
     def publish(
@@ -49,6 +51,21 @@ def build_publication_router(
                 detail="publication service is not configured",
             )
         return service.list_pending_approval_product_ids()
+
+    @router.get(
+        "/products/approved",
+        response_model=tuple[str, ...],
+    )
+    def list_approved_products(
+        request: Request,
+    ) -> tuple[str, ...]:
+        ensure_admin(auth, request)
+        if service is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="publication service is not configured",
+            )
+        return service.list_approved_product_ids()
 
     @router.get(
         "/products/{product_id}/versions",

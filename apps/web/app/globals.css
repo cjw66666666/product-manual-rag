@@ -648,6 +648,49 @@ textarea {
   gap: 8px;
 }
 
+.admin-version-tabs {
+  display: inline-flex;
+  gap: 3px;
+  margin-bottom: 14px;
+  padding: 3px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.admin-version-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.admin-version-tab span {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  place-items: center;
+  color: inherit;
+  background: var(--surface);
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.admin-version-tab.active {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
+}
+
 .admin-version-group + .admin-version-group {
   margin-top: 22px;
 }
@@ -676,6 +719,11 @@ textarea {
 .version-active {
   color: #166534;
   background: #dcfce7;
+}
+
+.status-unpublished {
+  color: #92400e;
+  background: #fef3c7;
 }
 
 .index-failed,
@@ -914,6 +962,16 @@ textarea {
   .admin-version-actions {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .admin-version-tabs {
+    display: flex;
+    width: 100%;
+  }
+
+  .admin-version-tab {
+    flex: 1;
+    justify-content: center;
   }
 
   .admin-inline-select {
