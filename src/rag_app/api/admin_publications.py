@@ -11,6 +11,8 @@ from rag_app.application import VersionView
 class PublicationService(Protocol):
     def list_versions(self, product_id: str) -> tuple[VersionView, ...]: ...
 
+    def list_pending_approval_product_ids(self) -> tuple[str, ...]: ...
+
     def approve(self, version_id: str, *, approved_by: str) -> None: ...
 
     def publish(
@@ -32,6 +34,21 @@ def build_publication_router(
     service: PublicationService | None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/admin", tags=["admin-publications"])
+
+    @router.get(
+        "/products/pending-approval",
+        response_model=tuple[str, ...],
+    )
+    def list_pending_approval_products(
+        request: Request,
+    ) -> tuple[str, ...]:
+        ensure_admin(auth, request)
+        if service is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="publication service is not configured",
+            )
+        return service.list_pending_approval_product_ids()
 
     @router.get(
         "/products/{product_id}/versions",

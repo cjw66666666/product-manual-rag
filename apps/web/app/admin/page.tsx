@@ -121,6 +121,8 @@ export default function AdminPage() {
   const [batch, setBatch] = useState<ImportBatch | null>(null);
   const [batches, setBatches] = useState<ImportBatchSummary[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [pendingApprovalProductIds, setPendingApprovalProductIds] =
+    useState<string[]>([]);
   const [conflictItem, setConflictItem] = useState<ImportItem | null>(null);
   const [conflictVersion, setConflictVersion] = useState("");
   const [productItem, setProductItem] = useState<ImportItem | null>(null);
@@ -144,13 +146,36 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (session === "admin") void loadProducts();
+    if (session === "admin") {
+      void loadProducts();
+      void loadPendingApprovalProducts().catch(() => {
+        setPendingApprovalProductIds([]);
+      });
+    }
   }, [session]);
 
+  const approvalProducts = useMemo(
+    () =>
+      products.filter((product) =>
+        pendingApprovalProductIds.includes(product.id),
+      ),
+    [pendingApprovalProductIds, products],
+  );
+
   useEffect(() => {
-    if (versionProductId || products.length === 0) return;
-    setVersionProductId(products[0].id);
-  }, [products, versionProductId]);
+    if (approvalProducts.length === 0) {
+      setVersionProductId("");
+      setVersions([]);
+      return;
+    }
+    if (
+      !approvalProducts.some(
+        (product) => product.id === versionProductId,
+      )
+    ) {
+      setVersionProductId(approvalProducts[0].id);
+    }
+  }, [approvalProducts, versionProductId]);
 
   useEffect(() => {
     if (session === "admin" && versionProductId) {
@@ -315,7 +340,10 @@ export default function AdminPage() {
       );
       if (!response.ok) throw new Error(await responseError(response));
       setMessage("版本已审批通过");
-      await loadVersions(versionProductId);
+      const pendingIds = await loadPendingApprovalProducts();
+      if (pendingIds.includes(versionProductId)) {
+        await loadVersions(versionProductId);
+      }
     } catch (approvalError) {
       setError(errorMessage(approvalError));
     } finally {
@@ -570,6 +598,17 @@ export default function AdminPage() {
     } catch {
       setProducts([]);
     }
+  }
+
+  async function loadPendingApprovalProducts(): Promise<string[]> {
+    const response = await fetch(
+      "/api/admin/products/pending-approval",
+      { credentials: "include" },
+    );
+    if (!response.ok) throw new Error(await responseError(response));
+    const productIds = (await response.json()) as string[];
+    setPendingApprovalProductIds(productIds);
+    return productIds;
   }
 
   async function queueWithProductName(
@@ -1143,22 +1182,37 @@ export default function AdminPage() {
                 className="admin-inline-select"
                 aria-label="版本产品"
                 value={versionProductId}
+                disabled={approvalProducts.length === 0}
                 onChange={(event) => {
                   setVersions([]);
                   setVersionProductId(event.target.value);
                 }}
               >
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.display_name}
-                  </option>
-                ))}
+                {approvalProducts.length === 0 ? (
+                  <option value="">暂无待审批产品</option>
+                ) : (
+                  approvalProducts.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.display_name}
+                    </option>
+                  ))
+                )}
               </select>
               <button
                 className="admin-secondary-button"
                 type="button"
-                onClick={() => void loadVersions(versionProductId)}
-                disabled={!versionProductId || versionsBusy}
+                onClick={() => {
+                  void loadPendingApprovalProducts()
+                    .then((pendingIds) => {
+                      if (pendingIds.includes(versionProductId)) {
+                        return loadVersions(versionProductId);
+                      }
+                    })
+                    .catch((refreshError) =>
+                      setError(errorMessage(refreshError)),
+                    );
+                }}
+                disabled={versionsBusy}
               >
                 <RefreshCw
                   className={versionsBusy ? "spin" : undefined}

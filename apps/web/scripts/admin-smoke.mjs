@@ -75,6 +75,15 @@ let versionState = {
     },
   ],
 };
+let versionStates = [
+  versionState,
+  {
+    ...versionState,
+    id: "version-2",
+    version_label: "2.0",
+    document_name: "safety-guide.pdf",
+  },
+];
 
 await page.route("**/api/admin/**", async (route) => {
   const request = route.request();
@@ -199,13 +208,29 @@ await page.route("**/api/admin/**", async (route) => {
   }
 
   if (
+    pathname === "/api/admin/products/pending-approval" &&
+    request.method() === "GET"
+  ) {
+    const pending = versionStates.some(
+      (version) =>
+        version.requires_manual_approval && version.approved_at === null,
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(pending ? ["huawei_c7"] : []),
+    });
+    return;
+  }
+
+  if (
     /^\/api\/admin\/products\/[^/]+\/versions$/.test(pathname) &&
     request.method() === "GET"
   ) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([versionState]),
+      body: JSON.stringify(versionStates),
     });
     return;
   }
@@ -214,11 +239,15 @@ await page.route("**/api/admin/**", async (route) => {
     pathname === "/api/admin/versions/version-1/approve" &&
     request.method() === "POST"
   ) {
-    versionState = {
-      ...versionState,
-      approved_at: "2026-10-29T12:00:00Z",
-      approved_by: "admin",
-    };
+    versionStates = versionStates.map((version) =>
+      version.id === "version-1"
+        ? {
+            ...version,
+            approved_at: "2026-10-29T12:00:00Z",
+            approved_by: "admin",
+          }
+        : version,
+    );
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -231,7 +260,11 @@ await page.route("**/api/admin/**", async (route) => {
     pathname === "/api/admin/versions/version-1/publish" &&
     request.method() === "POST"
   ) {
-    versionState = { ...versionState, status: "active" };
+    versionStates = versionStates.map((version) =>
+      version.id === "version-1"
+        ? { ...version, status: "active" }
+        : version,
+    );
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -330,12 +363,24 @@ const pendingBefore = await page
 const approvedBefore = await page
   .locator(".admin-version-group.approved tbody tr")
   .count();
-if (pendingBefore !== 1 || approvedBefore !== 0) {
+if (pendingBefore !== 2 || approvedBefore !== 0) {
   throw new Error(
     `unexpected version groups before approval: ${pendingBefore}/${approvedBefore}`,
   );
 }
-await page.getByRole("button", { name: "审批通过" }).click();
+const approvalOptionsBefore = await page
+  .getByLabel("版本产品")
+  .locator("option")
+  .allTextContents();
+if (
+  approvalOptionsBefore.length !== 1 ||
+  approvalOptionsBefore[0] !== "华为平板 C7"
+) {
+  throw new Error(
+    `unexpected approval products: ${approvalOptionsBefore.join(", ")}`,
+  );
+}
+await page.getByRole("button", { name: "审批通过" }).first().click();
 await page.getByRole("button", { name: "发布" }).waitFor();
 await page.waitForFunction(() => {
   const pending = document.querySelectorAll(
@@ -344,12 +389,13 @@ await page.waitForFunction(() => {
   const approved = document.querySelectorAll(
     ".admin-version-group.approved tbody tr",
   ).length;
-  return pending === 0 && approved === 1;
+  return pending === 1 && approved === 1;
 });
 await page.getByRole("button", { name: "发布" }).click();
 await page.getByText("当前活动").waitFor();
 const versionStatus = await page
   .locator(".admin-version-table tbody tr")
+  .filter({ hasText: "2.1" })
   .innerText();
 await page.screenshot({ path: "logs/admin-smoke.png", fullPage: true });
 await page.setViewportSize({ width: 390, height: 844 });

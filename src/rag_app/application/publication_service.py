@@ -20,6 +20,8 @@ class VersionRepository(Protocol):
         product_id: str,
     ) -> tuple[DocumentVersionRecord, ...]: ...
 
+    def list_pending_approval_product_ids(self) -> tuple[str, ...]: ...
+
     def approve_version(self, version_id: str, *, approved_by: str) -> None: ...
 
     def activate_version(
@@ -120,6 +122,9 @@ class VersionPublicationService:
             )
             for item in self._versions.list_versions_for_product(product_id)
         )
+
+    def list_pending_approval_product_ids(self) -> tuple[str, ...]:
+        return self._versions.list_pending_approval_product_ids()
 
     def approve(self, version_id: str, *, approved_by: str) -> None:
         self._versions.approve_version(

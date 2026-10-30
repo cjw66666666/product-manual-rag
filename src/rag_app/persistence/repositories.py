@@ -221,6 +221,23 @@ class DocumentRepository:
             is not None
         )
 
+    def list_pending_approval_product_ids(self) -> tuple[str, ...]:
+        product_ids = self._session.scalars(
+            select(ProductDocumentBinding.product_id)
+            .join(
+                DocumentVersion,
+                DocumentVersion.document_id
+                == ProductDocumentBinding.document_id,
+            )
+            .where(
+                DocumentVersion.requires_manual_approval.is_(True),
+                DocumentVersion.approved_at.is_(None),
+            )
+            .distinct()
+            .order_by(ProductDocumentBinding.product_id)
+        ).all()
+        return tuple(product_ids)
+
     def get_version_status(self, version_id: str) -> str | None:
         version = self._session.get(DocumentVersion, version_id)
         return None if version is None else version.status

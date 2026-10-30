@@ -34,6 +34,9 @@ class Versions:
             ),
         )
 
+    def list_pending_approval_product_ids(self) -> tuple[str, ...]:
+        return ("p1", "p2")
+
     def approve_version(self, version_id: str, *, approved_by: str) -> None:
         self.approved = [(version_id, approved_by)]
 
@@ -107,6 +110,15 @@ def test_publication_service_lists_and_approves() -> None:
     assert listed[0].indexes[0].index_version_id == "i1"
     assert listed[0].indexes[0].chunk_count == 3
     assert versions.approved == [("v1", "admin")]
+
+
+def test_publication_service_lists_products_needing_approval() -> None:
+    service = VersionPublicationService(
+        versions=Versions(approved=[], activated=[]),
+        indexes=Indexes("completed"),
+    )
+
+    assert service.list_pending_approval_product_ids() == ("p1", "p2")
 
 
 def test_publication_service_requires_completed_index() -> None:
