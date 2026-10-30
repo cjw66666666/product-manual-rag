@@ -39,5 +39,5 @@ reports/
 
 # Local-only evaluation corpora and source manuals
 datasets/eval/
-docs/doc1/
+docs/doc*/
 
