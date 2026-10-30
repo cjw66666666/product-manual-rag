@@ -221,7 +221,23 @@ await page.route("**/api/admin/**", async (route) => {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(
-        versionState.approved_at ? ["huawei_c7"] : [],
+        versionState.approved_at && versionState.status !== "active"
+          ? ["huawei_c7"]
+          : [],
+      ),
+    });
+    return;
+  }
+
+  if (
+    pathname === "/api/admin/products/published" &&
+    request.method() === "GET"
+  ) {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        versionState.status === "active" ? ["huawei_c7"] : [],
       ),
     });
     return;
@@ -387,8 +403,17 @@ await page.waitForFunction(() => {
   return approved === 1 && selectedTab?.textContent?.includes("已审批");
 });
 await page.getByRole("button", { name: "发布" }).waitFor();
-await page.getByText("未发布").waitFor();
+await page.locator(".admin-tag.status-unpublished").waitFor();
 await page.getByRole("button", { name: "发布" }).click();
+await page.waitForFunction(() => {
+  const published = document.querySelectorAll(
+    ".admin-version-group.published tbody tr",
+  ).length;
+  const selectedTab = document.querySelector(
+    '[role="tab"][aria-selected="true"]',
+  );
+  return published === 1 && selectedTab?.textContent?.includes("已发布");
+});
 await page.getByText("当前活动").waitFor();
 const versionStatus = await page
   .locator(".admin-version-table tbody tr")

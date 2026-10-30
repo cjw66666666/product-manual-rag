@@ -40,6 +40,9 @@ class FakePublicationService:
     def list_approved_product_ids(self) -> tuple[str, ...]:
         return ("p0", "p1")
 
+    def list_published_product_ids(self) -> tuple[str, ...]:
+        return ("p2",)
+
     def approve(self, version_id: str, *, approved_by: str) -> None:
         self.approved.append(version_id)
 
@@ -81,6 +84,9 @@ async def test_admin_can_list_approve_and_publish_safety_version() -> None:
         approved_products = await client.get(
             "/api/admin/products/approved"
         )
+        published_products = await client.get(
+            "/api/admin/products/published"
+        )
         listed = await client.get("/api/admin/products/p1/versions")
         approved = await client.post(
             "/api/admin/versions/v1/approve",
@@ -97,6 +103,8 @@ async def test_admin_can_list_approve_and_publish_safety_version() -> None:
     assert pending_products.json() == ["p1"]
     assert approved_products.status_code == 200
     assert approved_products.json() == ["p0", "p1"]
+    assert published_products.status_code == 200
+    assert published_products.json() == ["p2"]
     assert listed.status_code == 200
     assert listed.json()[0]["requires_manual_approval"] is True
     assert listed.json()[0]["document_name"] == "guide.pdf"

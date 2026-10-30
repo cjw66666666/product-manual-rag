@@ -40,6 +40,9 @@ class Versions:
     def list_approved_product_ids(self) -> tuple[str, ...]:
         return ("p3",)
 
+    def list_published_product_ids(self) -> tuple[str, ...]:
+        return ("p4",)
+
     def approve_version(self, version_id: str, *, approved_by: str) -> None:
         self.approved = [(version_id, approved_by)]
 
@@ -131,6 +134,15 @@ def test_publication_service_lists_approved_products() -> None:
     )
 
     assert service.list_approved_product_ids() == ("p3",)
+
+
+def test_publication_service_lists_published_products() -> None:
+    service = VersionPublicationService(
+        versions=Versions(approved=[], activated=[]),
+        indexes=Indexes("completed"),
+    )
+
+    assert service.list_published_product_ids() == ("p4",)
 
 
 def test_publication_service_requires_completed_index() -> None:

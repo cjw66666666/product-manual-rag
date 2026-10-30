@@ -246,7 +246,24 @@ class DocumentRepository:
                 DocumentVersion.document_id
                 == ProductDocumentBinding.document_id,
             )
-            .where(DocumentVersion.approved_at.is_not(None))
+            .where(
+                DocumentVersion.approved_at.is_not(None),
+                DocumentVersion.status == "validated",
+            )
+            .distinct()
+            .order_by(ProductDocumentBinding.product_id)
+        ).all()
+        return tuple(product_ids)
+
+    def list_published_product_ids(self) -> tuple[str, ...]:
+        product_ids = self._session.scalars(
+            select(ProductDocumentBinding.product_id)
+            .join(
+                DocumentVersion,
+                DocumentVersion.document_id
+                == ProductDocumentBinding.document_id,
+            )
+            .where(DocumentVersion.status == "active")
             .distinct()
             .order_by(ProductDocumentBinding.product_id)
         ).all()

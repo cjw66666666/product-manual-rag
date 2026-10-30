@@ -244,6 +244,10 @@ class SessionScopedPublicationService:
         with self._session_factory() as session:
             return self._service_factory(session).list_approved_product_ids()
 
+    def list_published_product_ids(self) -> tuple[str, ...]:
+        with self._session_factory() as session:
+            return self._service_factory(session).list_published_product_ids()
+
     def approve(self, version_id: str, *, approved_by: str) -> None:
         with self._session_factory() as session:
             self._service_factory(session).approve(
