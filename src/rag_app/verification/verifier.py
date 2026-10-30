@@ -2,8 +2,15 @@ import re
 from collections.abc import Sequence
 from typing import Protocol
 
-from rag_app.answering import AnswerMode, DraftAnswer, Evidence
+from rag_app.answering import (
+    AnswerMode,
+    DraftAnswer,
+    Evidence,
+    RiskLevel,
+    classify_risk,
+)
 from rag_app.verification.models import (
+    ClaimEvidence,
     SupportDecision,
     SupportStatus,
     VerificationIssue,
@@ -73,12 +80,24 @@ class SemanticSupportAssessor(Protocol):
     ) -> SupportDecision: ...
 
 
+class SemanticSupportBatchAssessor(Protocol):
+    def assess_many(
+        self,
+        *,
+        claims: tuple[ClaimEvidence, ...],
+        question: str,
+    ) -> tuple[SupportDecision, ...]: ...
+
+
 class CitationVerifier:
     def __init__(
         self,
         *,
         semantic_checker: (
-            SemanticSupportChecker | SemanticSupportAssessor | None
+            SemanticSupportChecker
+            | SemanticSupportAssessor
+            | SemanticSupportBatchAssessor
+            | None
         ) = None,
     ) -> None:
         self._semantic_checker = semantic_checker
@@ -117,6 +136,7 @@ class CitationVerifier:
 
         mapped_citation_ids: set[str] = set()
         pending_prefix = ""
+        semantic_claims: list[ClaimEvidence] = []
         for claim, indices in _claims_with_citations(draft.text):
             if not indices:
                 if _is_discourse_prefix(claim):
@@ -150,56 +170,21 @@ class CitationVerifier:
                 cited_evidence,
             ):
                 continue
-            if self._semantic_checker is None:
-                issues.append(VerificationIssue.SEMANTIC_UNVERIFIED)
-                continue
-            try:
-                assessor = getattr(
-                    self._semantic_checker,
-                    "assess",
-                    None,
-                )
-                if callable(assessor):
-                    decision = assessor(
-                        claim=verified_claim,
-                        question=question,
-                        evidence=cited_evidence,
-                    )
-                    if decision.status is SupportStatus.SUPPORTED:
-                        continue
-                    if decision.status is SupportStatus.UNCERTAIN:
-                        issues.append(
-                            VerificationIssue.SEMANTIC_UNVERIFIED
-                        )
-                        continue
-                    if decision.status is SupportStatus.CHECK_FAILED:
-                        issues.append(
-                            VerificationIssue.SEMANTIC_CHECK_FAILED
-                        )
-                        continue
-                    issues.append(VerificationIssue.SEMANTIC_UNSUPPORTED)
-                    continue
-                supports = getattr(
-                    self._semantic_checker,
-                    "supports",
-                    None,
-                )
-                if not callable(supports):
-                    issues.append(VerificationIssue.SEMANTIC_CHECK_FAILED)
-                    continue
-                supported = supports(
+            semantic_claims.append(
+                ClaimEvidence(
                     claim=verified_claim,
-                    question=question,
                     evidence=cited_evidence,
                 )
-            except Exception:
-                issues.append(VerificationIssue.SEMANTIC_CHECK_FAILED)
-                continue
-            if not supported:
-                issues.append(VerificationIssue.SEMANTIC_UNSUPPORTED)
+            )
 
         if pending_prefix:
             issues.append(VerificationIssue.UNCITED_CLAIM)
+
+        self._check_semantic_claims(
+            semantic_claims,
+            question=question,
+            issues=issues,
+        )
 
         if mapped_citation_ids != set(draft.citations):
             issues.append(VerificationIssue.CITATION_MISMATCH)
@@ -208,6 +193,158 @@ class CitationVerifier:
             passed=not issues,
             issues=tuple(dict.fromkeys(issues)),
         )
+
+    def _check_semantic_claims(
+        self,
+        claims: Sequence[ClaimEvidence],
+        *,
+        question: str,
+        issues: list[VerificationIssue],
+    ) -> None:
+        if not claims:
+            return
+        if self._semantic_checker is None:
+            issues.extend(
+                VerificationIssue.SEMANTIC_UNVERIFIED for _ in claims
+            )
+            return
+
+        assessor = getattr(self._semantic_checker, "assess", None)
+        batch_assessor = getattr(
+            self._semantic_checker,
+            "assess_many",
+            None,
+        )
+        supports = getattr(self._semantic_checker, "supports", None)
+
+        if len(claims) > 1 and callable(batch_assessor):
+            decisions = self._assess_many(
+                batch_assessor,
+                claims=claims,
+                question=question,
+            )
+            if (
+                classify_risk(question) is RiskLevel.SAFETY_CRITICAL
+                and callable(assessor)
+            ):
+                for item, decision in zip(
+                    claims,
+                    decisions,
+                    strict=True,
+                ):
+                    if decision.status is not SupportStatus.SUPPORTED:
+                        decision = self._assess_one(
+                            assessor,
+                            item=item,
+                            question=question,
+                        )
+                    self._append_semantic_issue(decision, issues)
+                return
+            for decision in decisions:
+                self._append_semantic_issue(decision, issues)
+            return
+
+        for item in claims:
+            if callable(assessor):
+                decision = self._assess_one(
+                    assessor,
+                    item=item,
+                    question=question,
+                )
+            elif callable(supports):
+                decision = self._assess_support(
+                    supports,
+                    item=item,
+                    question=question,
+                )
+            else:
+                decision = SupportDecision(
+                    SupportStatus.CHECK_FAILED
+                )
+            self._append_semantic_issue(decision, issues)
+
+    @staticmethod
+    def _assess_many(
+        batch_assessor: object,
+        *,
+        claims: Sequence[ClaimEvidence],
+        question: str,
+    ) -> tuple[SupportDecision, ...]:
+        try:
+            decisions = batch_assessor(  # type: ignore[operator]
+                claims=tuple(claims),
+                question=question,
+            )
+        except Exception:
+            decisions = ()
+        if (
+            not isinstance(decisions, tuple | list)
+            or len(decisions) != len(claims)
+            or any(
+                not isinstance(decision, SupportDecision)
+                for decision in decisions
+            )
+        ):
+            return tuple(
+                SupportDecision(SupportStatus.CHECK_FAILED)
+                for _ in claims
+            )
+        return tuple(decisions)
+
+    @staticmethod
+    def _assess_one(
+        assessor: object,
+        *,
+        item: ClaimEvidence,
+        question: str,
+    ) -> SupportDecision:
+        try:
+            decision = assessor(  # type: ignore[operator]
+                claim=item.claim,
+                question=question,
+                evidence=item.evidence,
+            )
+        except Exception:
+            return SupportDecision(SupportStatus.CHECK_FAILED)
+        if not isinstance(decision, SupportDecision):
+            return SupportDecision(SupportStatus.CHECK_FAILED)
+        return decision
+
+    @staticmethod
+    def _assess_support(
+        supports: object,
+        *,
+        item: ClaimEvidence,
+        question: str,
+    ) -> SupportDecision:
+        try:
+            supported = supports(  # type: ignore[operator]
+                claim=item.claim,
+                question=question,
+                evidence=item.evidence,
+            )
+        except Exception:
+            return SupportDecision(SupportStatus.CHECK_FAILED)
+        if supported is True:
+            return SupportDecision(SupportStatus.SUPPORTED)
+        if supported is False:
+            return SupportDecision(SupportStatus.UNSUPPORTED)
+        return SupportDecision(SupportStatus.CHECK_FAILED)
+
+    @staticmethod
+    def _append_semantic_issue(
+        decision: SupportDecision,
+        issues: list[VerificationIssue],
+    ) -> None:
+        if decision.status is SupportStatus.SUPPORTED:
+            return
+        if decision.status is SupportStatus.UNCERTAIN:
+            issues.append(VerificationIssue.SEMANTIC_UNVERIFIED)
+            return
+        if decision.status is SupportStatus.UNSUPPORTED:
+            issues.append(VerificationIssue.SEMANTIC_UNSUPPORTED)
+            return
+        issues.append(VerificationIssue.SEMANTIC_CHECK_FAILED)
 
     def verify(
         self,

@@ -1,4 +1,5 @@
 from rag_app.verification.models import (
+    ClaimEvidence,
     SupportDecision,
     SupportStatus,
     VerificationIssue,
@@ -12,6 +13,7 @@ from rag_app.verification.verifier import (
 
 __all__ = [
     "CitationVerifier",
+    "ClaimEvidence",
     "RemoteSemanticSupportChecker",
     "SemanticSupportChecker",
     "SupportDecision",

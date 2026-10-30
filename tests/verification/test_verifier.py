@@ -2,6 +2,7 @@ from rag_app.answering import AnswerMode, DraftAnswer, Evidence
 from rag_app.remote_models import Generation
 from rag_app.verification import (
     CitationVerifier,
+    ClaimEvidence,
     RemoteSemanticSupportChecker,
     SupportDecision,
     SupportStatus,
@@ -45,7 +46,7 @@ class JsonLlm:
     ) -> Generation:
         self.system_prompt = system_prompt
         assert "<manual_evidence>" in prompt
-        assert "<claim>" in prompt
+        assert "<claim" in prompt
         return Generation(self.text, 10, 2)
 
 
@@ -201,6 +202,228 @@ def test_remote_semantic_checker_exposes_invalid_output_status() -> None:
     )
 
     assert decision.status is SupportStatus.CHECK_FAILED
+
+
+def test_remote_semantic_checker_batches_claims() -> None:
+    llm = JsonLlm(
+        '{"results":['
+        '{"id":1,"supported":true},'
+        '{"id":2,"supported":false}'
+        "]}"
+    )
+    checker = RemoteSemanticSupportChecker(
+        llm=llm,
+        model="verifier",
+    )
+
+    decisions = checker.assess_many(
+        claims=(
+            ClaimEvidence(
+                claim="请勿拆机。",
+                evidence=(Evidence("chunk-1", "请勿拆机。", 3),),
+            ),
+            ClaimEvidence(
+                claim="保修三年。",
+                evidence=(Evidence("chunk-1", "请勿拆机。", 3),),
+            ),
+        ),
+        question="可以拆机吗？",
+    )
+
+    assert [item.status for item in decisions] == [
+        SupportStatus.SUPPORTED,
+        SupportStatus.UNSUPPORTED,
+    ]
+
+
+def test_remote_semantic_checker_batch_fails_closed_on_missing_ids() -> None:
+    checker = RemoteSemanticSupportChecker(
+        llm=JsonLlm(
+            '{"results":[{"id":1,"supported":true}]}'
+        ),
+        model="verifier",
+    )
+
+    decisions = checker.assess_many(
+        claims=(
+            ClaimEvidence(
+                claim="请勿拆机。",
+                evidence=(Evidence("chunk-1", "请勿拆机。", 3),),
+            ),
+            ClaimEvidence(
+                claim="保修三年。",
+                evidence=(Evidence("chunk-1", "请勿拆机。", 3),),
+            ),
+        ),
+        question="可以拆机吗？",
+    )
+
+    assert [item.status for item in decisions] == [
+        SupportStatus.CHECK_FAILED,
+        SupportStatus.CHECK_FAILED,
+    ]
+
+
+def test_remote_semantic_checker_batch_fails_closed_on_duplicate_ids() -> None:
+    checker = RemoteSemanticSupportChecker(
+        llm=JsonLlm(
+            '{"results":['
+            '{"id":1,"supported":true},'
+            '{"id":1,"supported":false}'
+            "]}"
+        ),
+        model="verifier",
+    )
+
+    decisions = checker.assess_many(
+        claims=(
+            ClaimEvidence(
+                claim="请勿拆机。",
+                evidence=(Evidence("chunk-1", "请勿拆机。", 3),),
+            ),
+            ClaimEvidence(
+                claim="保修三年。",
+                evidence=(Evidence("chunk-1", "请勿拆机。", 3),),
+            ),
+        ),
+        question="可以拆机吗？",
+    )
+
+    assert [item.status for item in decisions] == [
+        SupportStatus.CHECK_FAILED,
+        SupportStatus.CHECK_FAILED,
+    ]
+
+
+def test_normal_question_batches_paraphrased_claims() -> None:
+    class BatchChecker:
+        calls: int = 0
+
+        def assess_many(
+            self,
+            *,
+            claims: tuple[ClaimEvidence, ...],
+            question: str,
+        ) -> tuple[SupportDecision, ...]:
+            self.calls += 1
+            return tuple(
+                SupportDecision(SupportStatus.SUPPORTED)
+                for _ in claims
+            )
+
+    checker = BatchChecker()
+    result = CitationVerifier(
+        semantic_checker=checker
+    ).check(
+        DraftAnswer(
+            "长按电源键即可启动设备[1]。从语言列表中选择中文[2]。",
+            ("chunk-1", "chunk-2"),
+        ),
+        (
+            Evidence("chunk-1", "按住电源键能够启动设备。", 1),
+            Evidence("chunk-2", "在语言列表中选择中文。", 2),
+        ),
+        question="设备如何启动？",
+    )
+
+    assert result.passed is True
+    assert checker.calls == 1
+
+
+def test_safety_question_rechecks_only_suspect_claims() -> None:
+    class TieredChecker:
+        batch_calls: int = 0
+        individual_claims: list[str]
+
+        def __init__(self) -> None:
+            self.individual_claims = []
+
+        def assess_many(
+            self,
+            *,
+            claims: tuple[ClaimEvidence, ...],
+            question: str,
+        ) -> tuple[SupportDecision, ...]:
+            self.batch_calls += 1
+            return (
+                SupportDecision(SupportStatus.UNSUPPORTED),
+                SupportDecision(SupportStatus.SUPPORTED),
+            )
+
+        def assess(
+            self,
+            *,
+            claim: str,
+            question: str,
+            evidence: tuple[Evidence, ...],
+        ) -> SupportDecision:
+            self.individual_claims.append(claim)
+            return SupportDecision(SupportStatus.SUPPORTED)
+
+    checker = TieredChecker()
+    result = CitationVerifier(
+        semantic_checker=checker
+    ).check(
+        DraftAnswer(
+            "长按电源键即可启动设备[1]。从语言列表中选择中文[2]。",
+            ("chunk-1", "chunk-2"),
+        ),
+        (
+            Evidence("chunk-1", "按住电源键能够启动设备。", 1),
+            Evidence("chunk-2", "在语言列表中选择中文。", 2),
+        ),
+        question="设备冒烟了怎么办？",
+    )
+
+    assert result.passed is True
+    assert checker.batch_calls == 1
+    assert len(checker.individual_claims) == 1
+    assert "电源键" in checker.individual_claims[0]
+
+
+def test_safety_question_rechecks_every_claim_after_batch_failure() -> None:
+    class FailedBatchChecker:
+        def __init__(self) -> None:
+            self.individual_claims: list[str] = []
+            self.batch_calls = 0
+
+        def assess_many(
+            self,
+            *,
+            claims: tuple[ClaimEvidence, ...],
+            question: str,
+        ) -> tuple[SupportDecision, ...]:
+            self.batch_calls += 1
+            raise RuntimeError("batch verifier unavailable")
+
+        def assess(
+            self,
+            *,
+            claim: str,
+            question: str,
+            evidence: tuple[Evidence, ...],
+        ) -> SupportDecision:
+            self.individual_claims.append(claim)
+            return SupportDecision(SupportStatus.SUPPORTED)
+
+    checker = FailedBatchChecker()
+    result = CitationVerifier(
+        semantic_checker=checker
+    ).check(
+        DraftAnswer(
+            "长按电源键即可启动设备[1]。从语言列表中选择中文[2]。",
+            ("chunk-1", "chunk-2"),
+        ),
+        (
+            Evidence("chunk-1", "按住电源键能够启动设备。", 1),
+            Evidence("chunk-2", "在语言列表中选择中文。", 2),
+        ),
+        question="设备冒烟了怎么办？",
+    )
+
+    assert result.passed is True
+    assert checker.batch_calls == 1
+    assert len(checker.individual_claims) == 2
 
 
 def test_uncertain_semantic_decision_is_not_a_contradiction() -> None:

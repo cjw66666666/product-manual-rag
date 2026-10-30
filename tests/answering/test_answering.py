@@ -349,6 +349,25 @@ def test_verifier_receives_the_original_question() -> None:
     assert verifier.question == "设备可以拆机吗？"
 
 
+def test_rewritten_safety_question_is_included_in_verification_context() -> None:
+    verifier = RecordingVerifier()
+
+    AnswerLoop(
+        retriever=FakeRetriever((
+            (Evidence("chunk-1", "请勿拆机。", 3),),
+        )),
+        generator=FakeGenerator(),
+        verifier=verifier,
+    ).run(
+        "设备冒烟了怎么办？",
+        risk_question="那怎么办？",
+    )
+
+    assert verifier.question is not None
+    assert "设备冒烟了怎么办" in verifier.question
+    assert "那怎么办" in verifier.question
+
+
 @dataclass
 class RecordingObserver(AnswerObserver):
     stages: list[str]

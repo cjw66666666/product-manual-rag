@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+from rag_app.answering.models import Evidence
+
 
 class VerificationIssue(StrEnum):
     MISSING_CITATION = "missing_citation"
@@ -29,6 +31,12 @@ class SupportStatus(StrEnum):
 class SupportDecision:
     status: SupportStatus
     reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimEvidence:
+    claim: str
+    evidence: tuple[Evidence, ...]
 
 
 @dataclass(frozen=True, slots=True)

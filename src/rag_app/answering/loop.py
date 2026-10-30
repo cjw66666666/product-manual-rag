@@ -79,8 +79,14 @@ class AnswerLoop:
         observer: AnswerObserver | None = None,
         risk_question: str | None = None,
     ) -> AnswerResult:
-        risk = classify_risk(risk_question or question)
-        verification_question = risk_question or question
+        verification_question = "\n".join(
+            dict.fromkeys(
+                item
+                for item in (question, risk_question)
+                if item is not None
+            )
+        )
+        risk = classify_risk(verification_question)
         general_concept = (
             risk is RiskLevel.NORMAL
             and self._allow_general_fallback
