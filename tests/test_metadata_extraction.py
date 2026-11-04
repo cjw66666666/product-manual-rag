@@ -1,5 +1,6 @@
 from rag_app.catalog import Product, ProductCatalog, ProductCategory
 from rag_app.metadata_extraction import extract_metadata
+from rag_app.seed import PRODUCTS
 
 CATALOG = ProductCatalog(
     (
@@ -34,3 +35,24 @@ def test_unknown_product_and_version_is_low_confidence() -> None:
 
     assert result.product_ids == ()
     assert result.confidence == "low"
+
+
+def test_legacy_c5e_manual_does_not_resolve_to_c5e_gen4() -> None:
+    seed_catalog = ProductCatalog(
+        tuple(
+            Product(
+                item.id,
+                item.name,
+                item.category,
+                (item.id, *item.aliases),
+            )
+            for item in PRODUCTS
+        )
+    )
+
+    result = extract_metadata(
+        "华为平板 C5e 用户指南-(BZI-W00&AL00,EMUI10.1_01,zh-cn)",
+        seed_catalog,
+    )
+
+    assert result.product_ids == ()

@@ -32,7 +32,7 @@ PRODUCTS = (
         "huawei_c5e_gen4",
         "华为擎云 C5 第4代",
         ProductCategory.TABLET,
-        ("C5e", "C5 第4代", "BYD5-W10", "BYD5-AL10"),
+        ("C5 第4代", "C5e 第4代", "BYD5-W10", "BYD5-AL10"),
     ),
     SeedProduct(
         "huawei_b5_440",
@@ -66,6 +66,25 @@ def seed_initial_data(
     *,
     index_version_id: str,
 ) -> ProductCatalog:
+    desired_aliases = {
+        (item.id, alias.casefold())
+        for item in PRODUCTS
+        for alias in (item.name, *item.aliases)
+    }
+    seeded_product_ids = {item.id for item in PRODUCTS}
+    existing_aliases = session.scalars(
+        select(ProductAlias).where(
+            ProductAlias.product_id.in_(seeded_product_ids)
+        )
+    ).all()
+    for alias_row in existing_aliases:
+        if (
+            alias_row.product_id,
+            alias_row.normalized_alias,
+        ) not in desired_aliases:
+            session.delete(alias_row)
+    session.flush()
+
     for item in PRODUCTS:
         row = session.get(ProductRow, item.id)
         if row is None:

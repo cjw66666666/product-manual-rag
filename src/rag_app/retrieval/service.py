@@ -163,7 +163,7 @@ class HybridRetrievalService:
         rrf_hits = tuple(by_id[item.chunk_id] for item in fused)
         candidates = rrf_hits[: self._rerank_limit]
         reranked = self._reranker.rerank(question, candidates)
-        final = reranked[: self._final_limit]
+        final = self._select_final(rrf_hits, reranked)
         if self._observer is not None:
             self._observer.record(
                 RetrievalTrace(
@@ -175,3 +175,31 @@ class HybridRetrievalService:
                 )
             )
         return final
+
+    def _select_final(
+        self,
+        rrf_hits: tuple[SearchHit, ...],
+        reranked: tuple[EvidenceHit, ...],
+    ) -> tuple[EvidenceHit, ...]:
+        if self._final_limit <= 1 or len(reranked) <= self._final_limit:
+            return reranked[: self._final_limit]
+
+        evidence_by_id = {item.chunk_id: item for item in reranked}
+        coarse = tuple(
+            RankedCandidate(hit.chunk_id, rank)
+            for rank, hit in enumerate(rrf_hits, start=1)
+            if hit.chunk_id in evidence_by_id
+        )
+        fine = tuple(
+            RankedCandidate(item.chunk_id, rank)
+            for rank, item in enumerate(reranked, start=1)
+        )
+        fused = reciprocal_rank_fusion(
+            coarse,
+            fine,
+            limit=self._final_limit,
+        )
+        return tuple(
+            evidence_by_id[item.chunk_id]
+            for item in fused
+        )

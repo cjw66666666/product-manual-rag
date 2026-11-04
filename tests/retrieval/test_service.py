@@ -143,3 +143,46 @@ def test_hybrid_service_records_each_retrieval_stage() -> None:
     assert [item.chunk_id for item in trace.rrf] == ["b", "a", "c"]
     assert [item.chunk_id for item in trace.reranked] == ["c", "a", "b"]
     assert [item.chunk_id for item in trace.final] == ["c", "a", "b"]
+
+
+def test_final_context_balances_rerank_and_rrf_ranks() -> None:
+    hits = tuple(hit(chunk_id) for chunk_id in "abcdefghijkl")
+
+    class OrderedReranker:
+        def rerank(
+            self,
+            question: str,
+            candidates: tuple[SearchHit, ...],
+        ) -> tuple[EvidenceHit, ...]:
+            order = ("a", "b", "c", "k", "d", "l", "h", "i", "j", "e", "g", "f")
+            by_id = {item.chunk_id: item for item in candidates}
+            return tuple(
+                EvidenceHit(
+                    chunk_id=chunk_id,
+                    content=by_id[chunk_id].content,
+                    page=by_id[chunk_id].page,
+                    score=1.0 - index / 20,
+                )
+                for index, chunk_id in enumerate(order)
+            )
+
+    result = HybridRetrievalService(
+        encoder=FakeEncoder(),
+        dense_search=FakeDenseSearch(hits),
+        sparse_search=FakeSparseSearch(hits),
+        reranker=OrderedReranker(),
+    ).search(
+        "question",
+        product_id="p1",
+        document_version_ids=("v1",),
+        index_version_id="i1",
+    )
+
+    assert [item.chunk_id for item in result] == [
+        "a",
+        "b",
+        "c",
+        "d",
+        "k",
+        "e",
+    ]
